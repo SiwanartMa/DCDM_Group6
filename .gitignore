@@ -1,2 +1,5 @@
 # ignore the raw data
 ./raw_data
+
+# ignore every slurm files
+./slurm*
