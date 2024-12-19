@@ -1,0 +1,31 @@
+---
+title: "Datacleaning_PS"
+format: pdf
+editor: visual
+---
+
+Setting the working directory
+
+```{r}
+setwd("/scratch_tmp/grp/msc_appbio/DCDM_group6")
+
+```
+
+Installing necessary libraries if not installed already
+
+Importing necessary libraries
+
+```{r}
+library(stringr)
+library(dplyr)
+library(tidyverse)
+library(ggplot2)
+```
+
+Reading files
+
+```{r}
+disease_info <- read.table("../raw_data/Group6/Disease_information.txt", sep = ",")
+disease_info[c("disease_id", "disease_term", "gene_accession_id", "phenodigm_score")] <- str_split_fixed(disease_info[2], ',',4)
+head(disease_info)
+```
