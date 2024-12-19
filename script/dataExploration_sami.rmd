@@ -7,6 +7,8 @@ output: html_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = "/scratch_tmp/grp/msc_appbio/DCDM_group6/raw_data/Group6")
+
 ```
 
 This script is for data exploration
@@ -57,4 +59,54 @@ row.names(df) <- NULL
 print(head(df))
 
 ```
+## SOP
+```{r}
+# set up the working directory
+setwd("/scratch_tmp/grp/msc_appbio/DCDM_group6/raw_data/Group6")
+sop = read.csv("./IMPC_SOP.csv")
+sop
+```
+
+# Setting the ranges
+```{r}
+allFields = sop[,1]
+allMins = sop[,3]
+allMaxs = sop[,4]
+print(allFields)
+print(allMins)
+print(allMaxs)
+```
+
+# Load the dataset
+```{r}
+files = list.files(path = "6", pattern = "*.csv", full.names = TRUE, recursive = FALSE)
+head(files)
+```
+
+```{r}
+total_files = length(files)
+print(paste("There are", total_files, "files in total"))
+
+counter = 0
+for (i in files){
+  counter = counter+1
+  
+  theFile <- read.csv(i) # load file
+  theFileDF <- as.data.frame(theFile)
+    
+  print(i)
+  if (counter == 10)
+  {
+    break
+  }
+
+  theText = paste("this is file ", counter)
+  print(head(theText))
+}
+```
+
+```{r}
+theFileDF
+```
+
 
