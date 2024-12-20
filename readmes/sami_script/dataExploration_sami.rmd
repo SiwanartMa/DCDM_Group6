@@ -1,0 +1,112 @@
+---
+title: "Data exploration"
+author: "Siwanart Ma"
+date: "2024-12-18"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = "/scratch_tmp/grp/msc_appbio/DCDM_group6/raw_data/Group6")
+
+```
+
+This script is for data exploration
+
+# Set up location
+```{bash}
+cd /scratch_tmp/grp/msc_appbio/DCDM_group6/raw_data/Group6
+ls -ld *
+```
+# Import datasets
+## Disease_information.txt
+```{r}
+# set up the working directory
+setwd("/scratch_tmp/grp/msc_appbio/DCDM_group6/raw_data/Group6")
+
+# import readr
+#install.packages("readr")
+library(readr)
+
+# Step 1: Read the file as plain text
+disease_information = readLines("Disease_information.txt")
+
+# Step 2: Skip the first line (header line) and clean up the data
+clean_disease_information <- disease_information[-2]  # Remove the first line (extra line)
+clean_disease_information <- gsub('^"|"$', "", clean_disease_information)  # Remove leading/trailing quotes
+
+# Step 3: Split the lines by commas, considering any extra spaces
+split_data <- strsplit(clean_disease_information, ",\\s*")  # Split by comma followed by optional spaces
+
+# Step 4: Convert the list of vectors into a data frame
+df <- as.data.frame(do.call(rbind, split_data), stringsAsFactors = FALSE)
+
+# Step 5: Assign column names
+colnames(df) <- c("disease_id", "disease_term", "gene_accession_id", "phenodigm_score")
+
+# Step 6: Clean the disease_id column to remove leading numbers (like "2", "3", etc.)
+# Step 5: Clean the disease_id column to remove leading numbers, spaces, and quotes
+df$disease_id <- gsub('^[0-9]+\\s*', '', df$disease_id)  # Remove leading numbers and spaces
+df$disease_id <- gsub('"', '', df$disease_id)  # Remove any remaining quotes
+
+# Step 7: Select the first four columns
+df = df[ -1,1:4]
+
+# Step 8: Reset row names to a sequential order starting from 1
+row.names(df) <- NULL
+
+# Step 9: View the result
+print(head(df))
+
+```
+## SOP
+```{r}
+# set up the working directory
+setwd("/scratch_tmp/grp/msc_appbio/DCDM_group6/raw_data/Group6")
+sop = read.csv("./IMPC_SOP.csv")
+sop
+```
+
+# Setting the ranges
+```{r}
+allFields = sop[,1]
+allMins = sop[,3]
+allMaxs = sop[,4]
+print(allFields)
+print(allMins)
+print(allMaxs)
+```
+
+# Load the dataset
+```{r}
+files = list.files(path = "6", pattern = "*.csv", full.names = TRUE, recursive = FALSE)
+head(files)
+```
+
+```{r}
+total_files = length(files)
+print(paste("There are", total_files, "files in total"))
+
+counter = 0
+for (i in files){
+  counter = counter+1
+  
+  theFile <- read.csv(i) # load file
+  theFileDF <- as.data.frame(theFile)
+    
+  print(i)
+  if (counter == 10)
+  {
+    break
+  }
+
+  theText = paste("this is file ", counter)
+  print(head(theText))
+}
+```
+
+```{r}
+theFileDF
+```
+
+
