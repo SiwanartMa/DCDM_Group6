@@ -1,5 +1,12 @@
 # ignore the raw data
+<<<<<<< HEAD
 ./raw_data
 
 # ignore every slurm files
 ./slurm*
+=======
+originals/
+
+# ignore the slurm files
+slurm-*.out
+>>>>>>> de7cba9dacca5aea5b01a01927aa9927e15880ff

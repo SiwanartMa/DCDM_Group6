@@ -7,29 +7,26 @@ output: html_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
-knitr::opts_knit$set(root.dir = "/scratch_tmp/grp/msc_appbio/DCDM_group6/raw_data/Group6")
-
+knitr::opts_knit$set(root.dir = "/scratch_tmp/grp/msc_appbio/DCDM_group6/")
+getwd()
 ```
 
 This script is for data exploration
 
 # Set up location
 ```{bash}
-cd /scratch_tmp/grp/msc_appbio/DCDM_group6/raw_data/Group6
+cd /scratch_tmp/grp/msc_appbio/DCDM_group6/
 ls -ld *
 ```
 # Import datasets
 ## Disease_information.txt
 ```{r}
-# set up the working directory
-setwd("/scratch_tmp/grp/msc_appbio/DCDM_group6/raw_data/Group6")
-
 # import readr
 #install.packages("readr")
 library(readr)
 
 # Step 1: Read the file as plain text
-disease_information = readLines("Disease_information.txt")
+disease_information = readLines("/scratch_tmp/grp/msc_appbio/DCDM_group6/metadata/Disease_information.txt")
 
 # Step 2: Skip the first line (header line) and clean up the data
 clean_disease_information <- disease_information[-2]  # Remove the first line (extra line)
@@ -61,9 +58,7 @@ print(head(df))
 ```
 ## SOP
 ```{r}
-# set up the working directory
-setwd("/scratch_tmp/grp/msc_appbio/DCDM_group6/raw_data/Group6")
-sop = read.csv("./IMPC_SOP.csv")
+sop = read.csv("/scratch_tmp/grp/msc_appbio/DCDM_group6/metadata/IMPC_SOP.csv")
 sop
 ```
 
@@ -79,8 +74,54 @@ print(allMaxs)
 
 # Load the dataset
 ```{r}
-files = list.files(path = "6", pattern = "*.csv", full.names = TRUE, recursive = FALSE)
+files = list.files(path = "/scratch_tmp/grp/msc_appbio/DCDM_group6/originals/Group6/data", pattern = "*.csv", full.names = TRUE, recursive = FALSE)
 head(files)
+```
+# 
+```{r}
+
+```
+
+# Check analysis_id
+```{r}
+#install.packages("progress")
+library(progress)
+
+# Create a progress bar for all the files
+pb <- progress_bar$new(total = length(files), format = "[:bar] :percent :elapsed", clear = FALSE)
+
+# Initialize a counter variable
+counter <- 0
+
+for (i in files){
+  df = read.csv(i)
+  df_t = as.data.frame(t(df))
+  colnames(df_t) = df_t[1,]
+  df_t = df_t[-1,]
+  
+  # Extract the file name
+  file_name = basename(i)
+  
+  if (length < allMins[4] || length> allMaxs[4]){
+    print(length(df_t$mouse_strain))
+    # Get the number of characters in each gene_accession_id
+    length = nchar(df_t$mouse_strain)
+    print(paste(file_name, "has mouse_strain with", length, "characters"))
+    print(paste(file_name, "fail QC")) 
+    # Increment the counter after processing each file
+    #counter <- counter + 1
+    }
+  #else {
+    #counter <- counter + 1
+    #next
+  
+  counter <- counter + 1
+  # Update the progress bar after processing each file
+  pb$tick()
+}
+
+# Print the total number of files processed
+print(paste("Total files processed:", counter))
 ```
 
 ```{r}
@@ -106,7 +147,15 @@ for (i in files){
 ```
 
 ```{r}
-theFileDF
+theFileDF$KMPCLA_CSD_008_001[4]
 ```
 
+```{r}
+df = read.csv("/scratch_tmp/grp/msc_appbio/DCDM_group6/originals/Group6/data/000991fbw0onirg.csv")
+df
+df2 = as.data.frame(t(df))
+colnames(df2) = df2[1,]
+df2 = df2[-1,]
+df2
+```
 
