@@ -1,0 +1,175 @@
+---
+title: "qcOnMerge"
+author: "Siwanart Ma"
+date: "2024-12-20"
+output: html_document
+---
+Initial setting up
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = "/scratch_tmp/grp/msc_appbio/DCDM_group6/")
+getwd()
+```
+
+read the merged csv file
+```{r}
+df = read.csv("/scratch_tmp/grp/msc_appbio/DCDM_group6/outputs/tables/Merged_df_final.csv")
+df = df[, -1]
+head(df)
+```
+Count NA values in each column
+```{r}
+na_counts = colSums(is.na(df))
+print(na_counts)
+```
+Count how many NA values are there in each row
+```{r}
+# Identify String and p-value columns based on SOP
+string_columns <- allFields[sop$dataType == "String"]
+pvalue_columns <- allFields[sop$dataType != "String"]
+
+# Filter for valid columns in df
+string_columns <- intersect(string_columns, colnames(df))
+pvalue_columns <- intersect(pvalue_columns, colnames(df))
+
+# Create a data frame to store NA counts
+na_counts <- data.frame(
+  analysis_id = if ("analysis_id" %in% colnames(df)) df$analysis_id else seq_len(nrow(df)),
+  na_count_string = rowSums(is.na(df[string_columns])),
+  na_count_pvalue = rowSums(is.na(df[pvalue_columns]))
+)
+
+# Filter rows where total NA count is greater than 1
+filtered_na_counts <- na_counts[
+  na_counts$na_count_string + na_counts$na_count_pvalue > 1, 
+]
+
+# Output the filtered data frame
+filtered_na_counts
+
+```
+
+read sop
+```{r}
+sop = read.csv("/scratch_tmp/grp/msc_appbio/DCDM_group6/metadata/IMPC_SOP.csv")
+sop
+```
+
+setting the ranges
+```{r}
+allFields = sop[,1]
+allMins = sop[,3]
+allMaxs = sop[,4]
+print(allFields)
+print(allMins)
+print(allMaxs)
+```
+QC all data
+
+```{r}
+df = read.csv("/scratch_tmp/grp/msc_appbio/DCDM_group6/outputs/tables/Merged_df100.csv")
+df = df[, -1]
+head(df)
+```
+
+```{r}
+# Load the progress bar library
+library(progress)
+
+# Initialize counters for overall QC failures
+overall_string_failure_counter <- 0
+overall_pvalue_failure_counter <- 0
+
+# Initialize a column to count the number of QC failures per row
+df$qc_failure_count <- 0
+df$qc_pvalue_failure_count <- 0
+
+# Loop through all fields in SOP
+for (i in 1:length(allFields)) {
+  # Get the current field name
+  field_name <- as.character(allFields[i])
+  
+  # Create a progress bar for the rows in the merged dataframe
+  pb <- progress_bar$new(total = nrow(df), format = paste0("Checking ", field_name, " [:bar] :percent :elapsed"), clear = FALSE)
+  
+  # Initialize counters for QC failures for this field
+  string_failure_counter <- 0
+  pvalue_failure_counter <- 0
+  
+  # Check if the field's data type is "String"
+  if (sop$dataType[i] == "String") {
+    # Loop through rows of the merged dataframe
+    for (row in 1:nrow(df)) {
+      # Extract the current row
+      row_data <- df[row, ]
+      
+      # Fetch the analysis ID (assuming column name is `analysis_id`)
+      analysis_id <- if ("analysis_id" %in% colnames(df)) as.character(row_data$analysis_id) else "Unknown"
+      
+      # Perform QC check for the current string field
+      if (field_name %in% colnames(df)) {
+        field_value <- as.character(row_data[[field_name]])
+        field_length <- nchar(field_value)
+        
+        if (is.na(field_value) || field_length < allMins[i] || field_length > allMaxs[i]) {
+          print(paste("Row", row, "with Analysis ID", analysis_id, 
+                      "has", field_name, "value", field_value, 
+                      "with", field_length, "characters and failed QC"))
+          cat("\n")
+          string_failure_counter <- string_failure_counter + 1
+          df$qc_failure_count[row] <- df$qc_failure_count[row] + 1
+        }
+      }
+      # Update the progress bar
+      pb$tick()
+    }
+    # Print summary for this string field
+    print(paste("Field:", field_name, "- Total String QC failures:", string_failure_counter))
+    overall_string_failure_counter <- overall_string_failure_counter + string_failure_counter
+  } else {
+    # Loop through rows for non-string fields to check p-value
+    for (row in 1:nrow(df)) {
+      # Extract the current row
+      row_data <- df[row, ]
+      
+      # Fetch the analysis ID (assuming column name is `analysis_id`)
+      analysis_id <- if ("analysis_id" %in% colnames(df)) as.character(row_data$analysis_id) else "Unknown"
+      
+      # Perform QC check for numeric p-value fields
+      if (field_name %in% colnames(df)) {
+        field_value <- as.numeric(row_data[[field_name]])
+        
+        if (is.na(field_value) || (!is.na(field_value) && (field_value < allMins[i] || field_value > allMaxs[i]))) {
+          print(paste("Row", row, "with Analysis ID", analysis_id, 
+                      "has", field_name, field_value, "and failed QC for p-value range"))
+          df$qc_pvalue_failure_count[row] <- 1
+          
+          pvalue_failure_counter <- pvalue_failure_counter + 1
+        }
+      }
+      # Update the progress bar
+      pb$tick()
+    }
+    # Print summary for this numeric field
+    print(paste("Field:", field_name, "- Total p-value QC failures:", pvalue_failure_counter))
+    overall_pvalue_failure_counter <- overall_pvalue_failure_counter + pvalue_failure_counter
+  }
+}
+
+# Print overall summary of QC results
+cat("\n") # Adds a blank line
+print(paste("Total String QC failures across all fields:", overall_string_failure_counter))
+print(paste("Total p-value QC failures across all fields:", overall_pvalue_failure_counter))
+print(paste("Total rows processed:", nrow(df)))
+cat("\n")
+
+# Optional: Filter out rows with QC failures (for partner)
+#failed_rows <- df[df$qc_failure_count > 0, ]
+#write.csv(failed_rows, "failed_rows.csv", row.names = FALSE)
+
+```
+
+```{r}
+df
+```
+
