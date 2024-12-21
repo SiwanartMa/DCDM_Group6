@@ -3,8 +3,8 @@ title: "QC"
 author: "Siwanart Ma"
 date: "2024-12-21"
 output:
-  pdf_document: default
   html_document: default
+  pdf_document: default
 ---
 
 Initial setting up
