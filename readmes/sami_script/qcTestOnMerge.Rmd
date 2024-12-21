@@ -133,7 +133,7 @@ for (i in 1:length(allFields)) {
         
         if (!is.na(field_value) && (field_value < allMins[i] || field_value > allMaxs[i])) {
           print(paste("Row", row, "with Analysis ID", analysis_id, 
-            "has", field_name, "with", field_length, "characters and failed QC for p-value range"))
+            "has", field_name, field_value, "and failed QC for p-value range"))
           
           pvalue_failure_counter <- pvalue_failure_counter + 1
         }
