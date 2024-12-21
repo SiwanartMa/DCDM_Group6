@@ -55,6 +55,8 @@ row.names(df) <- NULL
 # Step 9: View the result
 print(head(df))
 
+# Step 10: Export it as csv
+#write.csv(df, "/scratch_tmp/grp/msc_appbio/DCDM_group6/outputs/tables/passQC.csv", row.names = FALSE)
 ```
 ## SOP
 ```{r}
@@ -146,16 +148,4 @@ for (i in files){
 }
 ```
 
-```{r}
-theFileDF$KMPCLA_CSD_008_001[4]
-```
-
-```{r}
-df = read.csv("/scratch_tmp/grp/msc_appbio/DCDM_group6/originals/Group6/data/000991fbw0onirg.csv")
-df
-df2 = as.data.frame(t(df))
-colnames(df2) = df2[1,]
-df2 = df2[-1,]
-df2
-```
 
