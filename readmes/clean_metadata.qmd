@@ -1,0 +1,119 @@
+---
+title: "clean_metadata"
+author: "Payel Sardar"
+format: pdf
+editor: visual
+---
+
+### Importing necessary libraries
+
+```{r}
+library(stringr)
+library(tidyr)
+```
+
+### Setting the working directory
+
+```{r}
+setwd("/users/k24034333/DCDM_Group6/")
+```
+
+### Setting the path to the metadata directory
+
+```{r}
+metadata_dir = "/users/k24034333/DCDM_Group6/metadata/"
+```
+
+### Reading and cleaning the files
+
+1.  IMPC_procedure.txt
+
+    Reading the lines of the file
+
+    ```{r}
+    proc_lines <- readLines(paste(metadata_dir,"IMPC_procedure.txt",sep=""))
+    ```
+
+    ```{r}
+    data <- lapply(proc_lines[-1], function(line) {
+      
+      # Match the first field (line_number + procedureId) and the rest
+      matches <- str_match(
+        line,
+        '^"([^"]+)"\\s+"([^,]+),\\s*(.*),\\s*(TRUE|FALSE),\\s*(\\d+)"$'
+        )
+      
+      # Return the extracted fields
+      c(matches[2], matches[3], matches[4], matches[5], matches[6])
+    })
+    ```
+
+    Combining into a data frame
+
+    ```{r}
+    procedure_df <- do.call(rbind, data)
+    colnames(procedure_df) <- c("line_number_procedureId",
+                                "name",
+                                "description",
+                                "isMandatory",
+                                "impcParameterOrigId")
+    ```
+
+    Saving the cleaned data in a CSV file
+
+    ```{r}
+    write.csv(procedure_df,
+              paste(metadata_dir,"IMPC_procedure.csv",
+                    sep=""),
+              row.names = FALSE)
+    ```
+
+2.  IMPC_parameter_description.txt
+
+    Reading the lines of the file
+
+    ```{r}
+    param_lines <- readLines(paste(metadata_dir,
+                                   "IMPC_parameter_description.txt",
+                                   sep=""))
+    ```
+
+    Using regex for separating data into columns
+
+    ```{r}
+    data <- lapply(param_lines[-1], function(line) {
+      
+      # Matching the first field and the rest
+      matches <- str_match(
+        line,
+        '^"([^"]+)"\\s+"([^,]+),\\s*([^,]+),\\s*([^,]+),\\s*([^"]+)"$'
+        )
+      
+      # Returning the extracted fields
+      c(matches[2], matches[3], matches[4], matches[5], matches[6])
+    })
+    ```
+
+    Combining into a dataframe
+
+    ```{r}
+    param_df <- do.call(rbind, data)
+
+    # Using the first row as col names
+    colnames(param_df) <- param_df[1, ]
+
+    # Dropping the first row
+    param_df <- param_df[-1, ]
+
+    # Viewing the resulting dataframe
+    head(param_df)
+    ```
+
+    Saving the resulting data frame in a CSV file
+
+    ```{r}
+    write.csv(param_df,
+              paste(metadata_dir,"IMPC_parameter_description.csv",
+                    sep=""),
+              row.names = FALSE)
+    ```

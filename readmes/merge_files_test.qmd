@@ -114,5 +114,5 @@ head(merged_df)
 ```
 
 ```{r}
-write.csv(merged_df, "Merged_df")
+write.csv(merged_df, "../outputs/tables/Merged_df100.csv")
 ```

@@ -7,8 +7,14 @@ editor: visual
 Setting the working directory
 
 ```{r}
-setwd("/scratch_tmp/grp/msc_appbio/DCDM_group6")
+setwd("/users/k24034333/DCDM_Group6/")
 
+```
+
+Setting the data directory
+
+```{r}
+data_path = "/scratch_tmp/grp/msc_appbio/DCDM_group6/originals/Group6/data"
 ```
 
 Installing necessary libraries if not installed already
@@ -18,14 +24,68 @@ Importing necessary libraries
 ```{r}
 library(stringr)
 library(dplyr)
-library(tidyverse)
+#library(tidyverse)
 library(ggplot2)
 ```
 
 Reading files
 
 ```{r}
-disease_info <- read.table("../raw_data/Group6/Disease_information.txt", sep = ",")
-disease_info[c("disease_id", "disease_term", "gene_accession_id", "phenodigm_score")] <- str_split_fixed(disease_info[2], ',',4)
-head(disease_info)
+library(tidyr)
+library(dplyr)
+
+# Read the data
+metadata_dir <- "/scratch_tmp/grp/msc_appbio/DCDM_group6/metadata/"
+temp_data <- read.table(paste(metadata_dir, "Disease_information.txt", sep = ""), 
+                        sep = ",", 
+                        header = FALSE, 
+                        stringsAsFactors = FALSE)
+
+# Rename the column
+colnames(temp_data) <- "text"
+
+# Identify rows with more or fewer commas than expected (3 commas total for 4 fields)
+expected_commas <- 3
+temp_data <- temp_data %>%
+  mutate(
+    comma_count = str_count(text, ","),
+    row_id = row_number()
+  )
+
+# Separate rows with unexpected comma counts
+anomalous_rows <- temp_data %>% filter(comma_count != expected_commas)
+valid_rows <- temp_data %>% filter(comma_count == expected_commas)
+
+# Fix anomalous rows dynamically
+fixed_anomalous_rows <- anomalous_rows %>%
+  mutate(
+    # Attempt to fix known patterns dynamically (like combining split disease names)
+    text = gsub("(Amyotrophy),\\s(Monomelic)", "\\1 \\2", text)
+  ) %>%
+  mutate(
+    comma_count = str_count(text, ",") # Recount commas after fixes
+  )
+
+# Combine valid rows and fixed rows
+combined_data <- bind_rows(valid_rows, fixed_anomalous_rows)
+
+# Separate into columns
+disease_info <- combined_data %>%
+  separate(
+    text, 
+    into = c("disease_id", "disease_term", "gene_accession_id", "phenodigm_score"), 
+    sep = ",\\s*", 
+    fill = "right"
+  )
+
+# Identify rows still problematic after fixing
+still_problematic <- disease_info %>%
+  filter(is.na(phenodigm_score) | is.na(gene_accession_id))
+
+# Display results
+print("Cleaned data:")
+print(disease_info)
+
+print("Rows with remaining issues:")
+print(still_problematic)
 ```
