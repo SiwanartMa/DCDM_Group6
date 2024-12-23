@@ -10,6 +10,7 @@ editor: visual
 ```{r}
 library(stringr)
 library(tidyr)
+library(dplyr)
 ```
 
 ### Setting the working directory
@@ -24,7 +25,7 @@ setwd("/users/k24034333/DCDM_Group6/")
 metadata_dir = "/users/k24034333/DCDM_Group6/metadata/"
 ```
 
-### Reading and cleaning the files
+# Reading and cleaning the files
 
 1.  IMPC_procedure.txt
 
@@ -57,6 +58,19 @@ metadata_dir = "/users/k24034333/DCDM_Group6/metadata/"
                                 "description",
                                 "isMandatory",
                                 "impcParameterOrigId")
+    procedure_df <- as.data.frame(procedure_df)
+    head(procedure_df)
+    ```
+
+    Checking for any duplicate rows
+
+    ```{r}
+    # Before cleaning
+    print("Orginal dimension:")
+    dim(procedure_df)
+    # Getting unique value counts for each column/feature
+    unique_counts <- sapply(procedure_df, function(x) length(unique(x)))
+    print(unique_counts)
     ```
 
     Saving the cleaned data in a CSV file
@@ -94,7 +108,7 @@ metadata_dir = "/users/k24034333/DCDM_Group6/metadata/"
     })
     ```
 
-    Combining into a dataframe
+    Combining into a data frame
 
     ```{r}
     param_df <- do.call(rbind, data)
@@ -104,16 +118,100 @@ metadata_dir = "/users/k24034333/DCDM_Group6/metadata/"
 
     # Dropping the first row
     param_df <- param_df[-1, ]
+    param_df <- as.data.frame(param_df)
+    param_df$line_number <- NULL
 
     # Viewing the resulting dataframe
     head(param_df)
     ```
 
+    Checking for any duplicate values/rows
+
+    ```{r}
+    # Before cleaning
+    print("Orginal dimension:")
+    dim(param_df)
+    # Getting unique value counts for each column/feature
+    unique_counts <- sapply(param_df, function(x) length(unique(x)))
+    print(unique_counts)
+    ```
+
+    This tells us that we have duplicate values.
+
+    ```{r}
+    # Finding impcParameterOrigId with multiple records
+    multiple_records <- table(param_df$impcParameterOrigId)
+    multiple_records[multiple_records > 1]
+    ```
+
+    ```{r}
+    param_df_cleaned <- distinct(param_df)
+    print("Dimension after removing duplicate values:")
+    dim(param_df_cleaned)
+    unique_counts <- sapply(param_df_cleaned, function(x) length(unique(x)))
+    print(unique_counts)
+    ```
+
     Saving the resulting data frame in a CSV file
 
     ```{r}
-    write.csv(param_df,
+    write.csv(param_df_cleaned,
               paste(metadata_dir,"IMPC_parameter_description.csv",
                     sep=""),
               row.names = FALSE)
+    ```
+
+3.  Disease_info
+
+    ```{r}
+    disease_lines <- readLines(paste(metadata_dir,
+                                   "Disease_information.txt",
+                                   sep=""))
+    ```
+
+    ```{r}
+    data <- lapply(disease_lines[-2], function(line) {
+      
+      # Matching the first field and the rest
+      matches <- str_match(
+        line,
+      #  '^"\\d+"\\s+"([^,]+),\\s*([^,]+(?:, [^,]+)*),\\s*([^,]+),\\s*([\\d.]+)"$'
+        '^"([^"]+)"\\s+"([^,]+),\\s*([^,]+(?:,\\s*[^,]+)*),\\s*([^,]+),\\s*(\\d+(?:\\.\\d+)?)"$'
+        )
+      
+      # Returning the extracted fields
+      c(matches[3], matches[4], matches[5], matches[6])
+    })
+    ```
+
+    ```{r}
+    disease_info_df <- do.call(rbind, data)
+
+    # Using the first row as col names
+    colnames(disease_info_df) <- c("disease_id", 
+                            "disease_term", 
+                            "gene_accession_id", 
+                            "phenodigm_score")
+
+    # Dropping the first row
+    disease_info_df <- disease_info_df[-1, ]
+    disease_info_df <- as.data.frame(disease_info_df)
+    disease_info_df$phenodigm_score <- as.numeric()
+
+    # Viewing the resulting dataframe
+    head(disease_info_df)
+    ```
+
+    Removing any duplicate values
+
+    ```{r}
+    #Using dplyr package to remove any duplicate rows
+    disease_info_df_cleaned <- distinct(disease_info_df)
+    ```
+
+    ```{r}
+    write.csv(disease_info_df_cleaned, 
+              "/users/k24034333/DCDM_Group6/metadata/Disease_information.csv",
+              row.names = FALSE)
+
     ```
