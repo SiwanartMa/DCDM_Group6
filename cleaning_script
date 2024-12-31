@@ -1,0 +1,93 @@
+# Load necessary libraries
+library(dplyr)
+
+# Define file paths
+input_path <- "/scratch_tmp/grp/msc_appbio/DCDM_group6/originals/Group6/data"
+output_path <- "/scratch_tmp/grp/msc_appbio/DCDM_group6/k24057496"
+sop_file <- "/scratch_tmp/grp/msc_appbio/DCDM_group6/metadata/IMPC_SOP.csv"  # Path to SOP file
+
+# Ensure output directory exists
+dir.create(output_path, showWarnings = FALSE)
+
+# Load the SOP file 
+sop <- read.csv(sop_file, stringsAsFactors = FALSE)
+
+# List all CSV files in the input directory
+files <- list.files(path = input_path, pattern = "*.csv", full.names = TRUE)
+
+# Function to clean a single file based on SOP
+clean_file <- function(file_path, sop) {
+  # Load the data
+  data <- read.csv(file_path, stringsAsFactors = FALSE)
+
+  # Track the initial number of rows
+  initial_rows <- nrow(data)
+
+  # Apply cleaning steps based on SOP
+  # Example cleaning rules:
+  # 1. Remove rows with missing values in critical columns
+  if ("critical_columns" %in% colnames(sop)) {
+    critical_columns <- sop$critical_columns[!is.na(sop$critical_columns)]
+    if (length(critical_columns) > 0) {
+      data <- data %>% filter(!if_any(all_of(critical_columns), is.na))
+    }
+  }
+
+  # 2. Filter rows based on valid ranges
+  if (all(c("column", "minValue", "maxValue") %in% colnames(sop))) {
+    for (i in 1:nrow(sop)) {
+      column <- sop$column[i]
+      min_val <- sop$minValue[i]
+      max_val <- sop$maxValue[i]
+      if (!is.na(column) && column %in% colnames(data)) {
+        if (!is.na(min_val) && !is.na(max_val)) {
+          data <- data %>% filter(.data[[column]] >= min_val & .data[[column]] <= max_val)
+        } else if (!is.na(min_val)) {
+          data <- data %>% filter(.data[[column]] >= min_val)
+        } else if (!is.na(max_val)) {
+          data <- data %>% filter(.data[[column]] <= max_val)
+        }
+      }
+    }
+  }
+
+  # 3. Ensure columns have correct data types based on SOP
+  if (all(c("column", "expected_type") %in% colnames(sop))) {
+    for (i in 1:nrow(sop)) {
+      column <- sop$column[i]
+      expected_type <- sop$expected_type[i]
+      if (!is.na(column) && column %in% colnames(data) && !is.na(expected_type)) {
+        if (expected_type == "float") {
+          data[[column]] <- as.numeric(data[[column]])
+        } else if (expected_type == "string") {
+          data[[column]] <- as.character(data[[column]])
+        }
+      }
+    }
+  }
+
+  # Track the number of rows after cleaning
+  final_rows <- nrow(data)
+
+  # Return data and rows removed
+  list(data = data, rows_removed = initial_rows - final_rows)
+}
+
+# Process each file
+for (file in files) {
+  cat("Processing", basename(file), "\n")
+
+  # Clean the file
+  result <- clean_file(file, sop)
+  cleaned_data <- result$data
+  rows_removed <- result$rows_removed
+
+  # Save the cleaned file
+  output_file <- file.path(output_path, paste0("cleaned_", basename(file)))
+  write.csv(cleaned_data, output_file, row.names = FALSE)
+
+  cat("Saved cleaned file to", output_file, "\n")
+  cat("Rows removed:", rows_removed, "\n")
+}
+
+cat("All files processed and saved in", output_path, "\n")
