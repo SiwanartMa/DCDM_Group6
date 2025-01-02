@@ -49,23 +49,25 @@ ui <- page_navbar(
       sidebarPanel(
         h4("Filters"),
         selectInput("mouse_strain_clustering", "Select Mouse Strain:", 
-                    choices = c("All", unique(aggregated_data$Mouse_Strain)), 
+                    choices = c(unique(aggregated_data$Mouse_Strain)), 
                     selected = unique(aggregated_data$Mouse_Strain)[1]),
-        selectInput("selected_phenotype", "Select Phenotype for Clustering:",
-                    choices = c("All", unique(aggregated_data$Phenotype)), 
-                    selected = "All"),
+        selectInput("mouse_phenotype_clustering", "Select Phenotype:",
+                    choices = c(unique(aggregated_data$Phenotype)),
+                    selected = unique(aggregated_data$Phenotype)[1]),
         hr(),
-        checkboxInput("significant_only_clustering", "Show Only Significant Results (P < 0.05)", TRUE)
+        checkboxInput("significant_only_clustering", "Show Only Significant Results (P < 0.05)", FALSE)
       ),
       mainPanel(
         tabsetPanel(
           tabPanel("PCA Plot", plotOutput("pca_plot")),
-          tabPanel("t-SNE Plot", plotOutput("tsne_plot"))
+          tabPanel("t-SNE Plot", plotOutput("tsne_plot"),
+          tabPanel("Data Table", tableOutput("filtered_table_pca")
         )
       )
     )
   )
 )
+))
 
 # Define Server
 server <- function(input, output) {
@@ -113,29 +115,36 @@ server <- function(input, output) {
     }
   })
   
-  # PCA plot output
-  output$pca_plot <- renderPlot({
-    data <- aggregated_data
-    # Ensure data is filtered for the selected mouse strain
-    if (input$mouse_strain_clustering != "All") {
-      data <- data %>% filter(Mouse_Strain == input$mouse_strain_clustering)
-    }
+  # Data table output
+  output$filtered_table <- renderTable({
+    filtered_data()
+  })
+  
+  # Organize data into a metadata list by mouse strain
+
+  filtered_data_pca <- reactive({
+    data <- aggregated_data[aggregated_data$Mouse_Strain == input$mouse_strain_clustering & aggregated_data$Phenotype == input$mouse_phenotype_clustering,]
+    
     if (input$significant_only_clustering) {
       data <- data %>% filter(Aggregated_PValue < 0.05)
     }
     
+    return(data)
+  })
+  
+  # PCA plot output
+  output$pca_plot <- renderPlot({
+    data <- filtered_data_pca()
+    
     # Prepare data for PCA
     data <- data %>%
       mutate(transformed_pvalue = -log10(Aggregated_PValue)) %>%
-      pivot_wider(names_from = Phenotype, values_from = transformed_pvalue)
-    
-    # Name the rownames with Gene
-    data <- data %>%
-      column_to_rownames("Gene")
-    
+      pivot_wider(names_from = Phenotype, values_from = transformed_pvalue) %>%
+      column_to_rownames("Gene") # Name the rownames with Gene
+  
     # Extract numeric columns for PCA
     numeric_data <- data[, -1]
-    
+
     # Impute missing values with column means
     numeric_data <- numeric_data %>%
       mutate(across(everything(), ~ ifelse(is.na(.), mean(., na.rm = TRUE), .)))
@@ -150,41 +159,58 @@ server <- function(input, output) {
     # Perform PCA
     pca_result <- prcomp(standardized_data, center = TRUE, scale. = TRUE)
     pca_data <- as.data.frame(pca_result$x)
-    
-    # Color by the selected phenotype
-    #pca_data$Phenotype <- ifelse(pca_data$Phenotype == input$selected_phenotype, input$selected_phenotype, "Other")
+
+    # Plot
     ggplot(pca_data, aes(x = PC1, y = PC2)) +
       geom_point() +
+      geom_text(aes(label = rownames(pca_data), vjust = -0.5, size = 3)) +
       ggtitle("PCA of Genes") +
-      theme_minimal() #+
-      #scale_color_manual(values = c("Other" = "gray", input$selected_phenotype = "red"))
-    
+      theme_minimal()
+  
   })
   
   # t-SNE plot output
   output$tsne_plot <- renderPlot({
-    data <- numeric_data
+    data <- filtered_data_pca()
+    head(data)
+    
+    # Prepare data for tsne
+    data <- data %>%
+      mutate(transformed_pvalue = -log10(Aggregated_PValue)) %>%
+      pivot_wider(names_from = Phenotype, values_from = transformed_pvalue) %>%
+      column_to_rownames("Gene")
+    
+    # Extract numeric columns for PCA
+    numeric_data <- data[, -1]
+    head(numeric_data)
+    
+    # Standardize data
+    numeric_data <- data %>%
+      mutate(across(everything(), ~ ifelse(is.na(.), mean(., na.rm = TRUE), .)))
+    standardized_data <- scale(numeric_data)
     
     # Perform t-SNE
-    tsne_result <- Rtsne(as.matrix(numeric_data), dims = 2, perplexity = 2, verbose = FALSE)
+    tsne_result <- Rtsne(standardized_data, dims = 2, perplexity = 2, verbose = FALSE)
     tsne_data <- as.data.frame(tsne_result$Y)
     colnames(tsne_data) <- c("Dim1", "Dim2")
-    tsne_data$Gene <- data$Gene
     
-    # Color by the selected phenotype
-    #tsne_data$Phenotype <- ifelse(data$Phenotype == input$selected_phenotype, input$selected_phenotype, "Other")
+    # Add row names as a column for labeling
+    tsne_data$Gene <- rownames(data)
+    
+    # Plot
     ggplot(tsne_data, aes(x = Dim1, y = Dim2)) +
       geom_point() +
+      geom_text(aes(label = Gene), vjust = -0.5, size = 4) +
       ggtitle("t-SNE of Genes") +
-      theme_minimal() #+
-      #scale_color_manual(values = c("Other" = "gray", input$selected_phenotype = "red"))
+      theme_minimal()
   }
     )
   
   # Data table output
-  output$filtered_table <- renderTable({
-    filtered_data()
+  output$filtered_table_pca <- renderTable({
+    filtered_data_pca()
   })
+
 }
 
 # Run the application
