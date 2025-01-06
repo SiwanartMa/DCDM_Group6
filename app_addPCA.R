@@ -3,6 +3,8 @@ library(ggplot2)
 library(dplyr)
 library(bslib)
 library(Rtsne)
+library(tibble)
+library(tidyr)
 
 # Load aggregated dataset (replace with your actual file path)
 aggregated_data <- read.csv("summarised_data/aggregated_data.csv")
@@ -143,15 +145,25 @@ server <- function(input, output) {
       column_to_rownames("Gene") # Name the rownames with Gene
   
     # Extract numeric columns for PCA
-    numeric_data <- data[, -1]
+    numeric_data <- data %>%
+      select(where(is.numeric))
 
     # Impute missing values with column means
-    numeric_data <- numeric_data %>%
-      mutate(across(everything(), ~ ifelse(is.na(.), mean(., na.rm = TRUE), .)))
+    #numeric_data <- numeric_data %>%
+    #  mutate(across(everything(), ~ ifelse(is.na(.), mean(., na.rm = TRUE), .)))
     
     # Remove zero-variance columns
-    constant_cols <- apply(numeric_data, 2, function(col) sd(col, na.rm = TRUE) == 0)
-    numeric_data <- numeric_data[, !constant_cols]
+    #constant_cols <- apply(numeric_data, 2, function(col) sd(col, na.rm = TRUE) == 0)
+    #if (any(constant_cols)) {
+    #  numeric_data <- numeric_data[, !constant_cols]
+    #}
+    
+    numeric_data <- numeric_data %>%
+      mutate(across(
+        everything(),
+        ~ ifelse(is.na(.), mean(., na.rm = TRUE), .)  # Impute missing values
+      )) %>%
+      select(where(~ sd(.x, na.rm = TRUE) > 0))  # Remove zero-variance columns
     
     # Standardize data
     standardized_data <- scale(numeric_data)
