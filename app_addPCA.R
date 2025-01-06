@@ -56,20 +56,19 @@ ui <- page_navbar(
         selectInput("mouse_phenotype_clustering", "Select Phenotype:",
                     choices = c(unique(aggregated_data$Phenotype)),
                     selected = unique(aggregated_data$Phenotype)[1]),
-        hr(),
-        checkboxInput("significant_only_clustering", "Show Only Significant Results (P < 0.05)", FALSE)
+        #hr(),
+        #checkboxInput("significant_only_clustering", "Show Only Significant Results (P < 0.05)", FALSE)
       ),
       mainPanel(
         tabsetPanel(
           tabPanel("PCA Plot", plotOutput("pca_plot")),
-          tabPanel("t-SNE Plot", plotOutput("tsne_plot"),
-          tabPanel("Data Table", tableOutput("filtered_table_pca")
+          tabPanel("t-SNE Plot", plotOutput("tsne_plot"))
         )
       )
     )
   )
 )
-))
+
 
 # Define Server
 server <- function(input, output) {
@@ -127,10 +126,6 @@ server <- function(input, output) {
   filtered_data_pca <- reactive({
     data <- aggregated_data[aggregated_data$Mouse_Strain == input$mouse_strain_clustering & aggregated_data$Phenotype == input$mouse_phenotype_clustering,]
     
-    if (input$significant_only_clustering) {
-      data <- data %>% filter(Aggregated_PValue < 0.05)
-    }
-    
     return(data)
   })
   
@@ -148,32 +143,49 @@ server <- function(input, output) {
     numeric_data <- data %>%
       select(where(is.numeric))
 
-    # Impute missing values with column means
-    #numeric_data <- numeric_data %>%
-    #  mutate(across(everything(), ~ ifelse(is.na(.), mean(., na.rm = TRUE), .)))
-    
-    # Remove zero-variance columns
-    #constant_cols <- apply(numeric_data, 2, function(col) sd(col, na.rm = TRUE) == 0)
-    #if (any(constant_cols)) {
-    #  numeric_data <- numeric_data[, !constant_cols]
-    #}
+    # Impute missing values with column means and remove zero-variance columns
     
     numeric_data <- numeric_data %>%
       mutate(across(
         everything(),
         ~ ifelse(is.na(.), mean(., na.rm = TRUE), .)  # Impute missing values
       )) %>%
-      select(where(~ sd(.x, na.rm = TRUE) > 0))  # Remove zero-variance columns
+      select(where(~ !any(is.na(.)) && sd(.x, na.rm = TRUE) > 0))  # Remove columns with NA or zero variance
     
     # Standardize data
     standardized_data <- scale(numeric_data)
+    
+    # Check the dimensions of the standardized data
+    data_dims <- dim(standardized_data)
 
-    # Perform PCA
+    # Check if data has enough rows and columns for PCA/t-SNE
+    if (data_dims[1] < 2 | data_dims[2] < 2) {
+      # Show a warning if not enough data
+      showNotification("Not enough data to perform PCA or t-SNE. Please ensure there are at least 2 rows and 2 numeric columns.", type = "warning")
+      return(NULL)  # Prevent further execution if not enough data
+    }
+    
+    # K-means clustering
+    set.seed(123)  # For reproducibility
+    kmeans_result <- kmeans(standardized_data, centers = 3)  # Choose appropriate k
+    
+    # Add cluster information
+    numeric_data$cluster <- as.factor(kmeans_result$cluster)
+    
+    # Step 5: Visualize Clustering Results
+    # PCA for visualization
     pca_result <- prcomp(standardized_data, center = TRUE, scale. = TRUE)
-    pca_data <- as.data.frame(pca_result$x)
+    pca_data <- as.data.frame(pca_result$x) %>%
+      cbind(cluster = numeric_data$cluster)
 
+    # Check if PCA has valid results
+    if (is.null(pca_result$x) || ncol(pca_result$x) < 2) {
+      showNotification("PCA could not be performed due to insufficient variance in the data.", type = "warning")
+      return(NULL)  # Prevent further execution if PCA failed
+    }
+    
     # Plot
-    ggplot(pca_data, aes(x = PC1, y = PC2)) +
+    ggplot(pca_data, aes(x = PC1, y = PC2, color = cluster)) +
       geom_point() +
       geom_text(aes(label = rownames(pca_data), vjust = -0.5, size = 3)) +
       ggtitle("PCA of Genes") +
@@ -184,22 +196,35 @@ server <- function(input, output) {
   # t-SNE plot output
   output$tsne_plot <- renderPlot({
     data <- filtered_data_pca()
-    head(data)
     
-    # Prepare data for tsne
+    # Prepare data for PCA
     data <- data %>%
       mutate(transformed_pvalue = -log10(Aggregated_PValue)) %>%
       pivot_wider(names_from = Phenotype, values_from = transformed_pvalue) %>%
-      column_to_rownames("Gene")
+      column_to_rownames("Gene") # Name the rownames with Gene
     
     # Extract numeric columns for PCA
-    numeric_data <- data[, -1]
-    head(numeric_data)
+    numeric_data <- data %>%
+      select(where(is.numeric))
+    
+    # Impute missing values with column means and remove zero-variance columns
+    
+    numeric_data <- numeric_data %>%
+      mutate(across(
+        everything(),
+        ~ ifelse(is.na(.), mean(., na.rm = TRUE), .)  # Impute missing values
+      )) %>%
+      select(where(~ sd(.x, na.rm = TRUE) > 0))  # Remove zero-variance columns
     
     # Standardize data
-    numeric_data <- data %>%
-      mutate(across(everything(), ~ ifelse(is.na(.), mean(., na.rm = TRUE), .)))
     standardized_data <- scale(numeric_data)
+    
+    # K-means clustering
+    set.seed(123)  # For reproducibility
+    kmeans_result <- kmeans(standardized_data, centers = 3)  # Choose appropriate k
+    
+    # Add cluster information
+    numeric_data$cluster <- as.factor(kmeans_result$cluster)
     
     # Perform t-SNE
     tsne_result <- Rtsne(standardized_data, dims = 2, perplexity = 2, verbose = FALSE)
@@ -208,20 +233,16 @@ server <- function(input, output) {
     
     # Add row names as a column for labeling
     tsne_data$Gene <- rownames(data)
+    tsne_data$cluster <- numeric_data$cluster
     
     # Plot
-    ggplot(tsne_data, aes(x = Dim1, y = Dim2)) +
+    ggplot(tsne_data, aes(x = Dim1, y = Dim2, color = cluster)) +
       geom_point() +
       geom_text(aes(label = Gene), vjust = -0.5, size = 4) +
       ggtitle("t-SNE of Genes") +
       theme_minimal()
   }
     )
-  
-  # Data table output
-  output$filtered_table_pca <- renderTable({
-    filtered_data_pca()
-  })
 
 }
 
