@@ -7,8 +7,8 @@ library(tibble)
 library(tidyr)
 
 # Load aggregated dataset (replace with your actual file path)
-aggregated_data <- read.csv("summarised_data/aggregated_data.csv")
-colnames(aggregated_data) <- c("Mouse_Strain", "Phenotype", "Gene", "Aggregated_PValue")
+aggregated_data <- read.csv("aggregated_data.csv")
+colnames(aggregated_data) <- c("Mouse_Strain", "Phenotype_Group", "Phenotype", "Gene", "Aggregated_PValue")
 
 # Define UI
 ui <- page_navbar(
@@ -50,24 +50,43 @@ ui <- page_navbar(
     sidebarLayout(
       sidebarPanel(
         h4("Filters"),
+        
+        # Select mouse strain
         selectInput("mouse_strain_clustering", "Select Mouse Strain:", 
                     choices = c(unique(aggregated_data$Mouse_Strain)), 
                     selected = unique(aggregated_data$Mouse_Strain)[1]),
-        selectInput("mouse_phenotype_clustering", "Select Phenotype:",
-                    choices = c(unique(aggregated_data$Phenotype)),
-                    selected = unique(aggregated_data$Phenotype)[1]),
-        #hr(),
-        #checkboxInput("significant_only_clustering", "Show Only Significant Results (P < 0.05)", FALSE)
+        
+        # Selection between Phenotype_Group and Phenotype
+        radioButtons("selection_type_clustering", "Choose Filter Type:",
+                     choices = c("Phenotype Group" = "group", "Phenotype" = "phenotype"),
+                     selected = "group"),
+        
+        # Conditional UI for Phenotype Group
+        conditionalPanel(
+          condition = "input.selection_type_clustering == 'group'",
+          selectInput("phenotype_group_clustering", "Select Phenotype Group:",
+                      choices = c(unique(aggregated_data$Phenotype_Group)),
+                      selected = unique(aggregated_data$Phenotype_Group)[1])
+        ),
+        
+        # Conditional UI for Phenotype
+        conditionalPanel(
+          condition = "input.selection_type_clustering == 'phenotype'",
+          selectInput("phenotype_clustering", "Select Phenotype:",
+                      choices = c(unique(aggregated_data$Phenotype)),
+                      selected = unique(aggregated_data$Phenotype)[1])
+      )
       ),
       mainPanel(
         tabsetPanel(
           tabPanel("PCA Plot", plotOutput("pca_plot")),
-          tabPanel("t-SNE Plot", plotOutput("tsne_plot"))
-        )
+          tabPanel("t-SNE Plot", plotOutput("tsne_plot"))),
+        textOutput("errorMessage_clustering")
       )
     )
   )
 )
+
 
 
 # Define Server
@@ -121,22 +140,41 @@ server <- function(input, output) {
     filtered_data()
   })
   
-  # Organize data into a metadata list by mouse strain
-
+  # Filter data for gene clustering
   filtered_data_pca <- reactive({
-    data <- aggregated_data[aggregated_data$Mouse_Strain == input$mouse_strain_clustering & aggregated_data$Phenotype == input$mouse_phenotype_clustering,]
+    # Start with filtering by Mouse Strain
+    data <- aggregated_data[aggregated_data$Mouse_Strain == input$mouse_strain_clustering,]
+    
+    # Apply additional filtering based on selection type
+    if (input$selection_type_clustering == "group") {
+      data <- data[data$Phenotype_Group == input$phenotype_group_clustering,]
+    } else if (input$selection_type_clustering == "phenotype") {
+      data <- data[data$Phenotype == input$phenotype_clustering,]
+    }
     
     return(data)
   })
   
   # PCA plot output
   output$pca_plot <- renderPlot({
+    
+  tryCatch({
     data <- filtered_data_pca()
+    
+    # Prepare data for PCA dynamically based on selection type
+    pivot_column <- if (input$selection_type_clustering == "group") "Phenotype_Group" else "Phenotype"
     
     # Prepare data for PCA
     data <- data %>%
       mutate(transformed_pvalue = -log10(Aggregated_PValue)) %>%
-      pivot_wider(names_from = Phenotype, values_from = transformed_pvalue) %>%
+      pivot_wider(names_from = all_of(pivot_column), values_from = transformed_pvalue) %>%
+      {
+        if (input$selection_type_clustering == "group") {
+          mutate(., Gene = paste0(Gene, "_", row_number())) # Add unique row number for group selection
+        } else {
+          . # Return the dataset unchanged
+        }
+      } %>%
       column_to_rownames("Gene") # Name the rownames with Gene
   
     # Extract numeric columns for PCA
@@ -144,7 +182,6 @@ server <- function(input, output) {
       select(where(is.numeric))
 
     # Impute missing values with column means and remove zero-variance columns
-    
     numeric_data <- numeric_data %>%
       mutate(across(
         everything(),
@@ -155,96 +192,105 @@ server <- function(input, output) {
     # Standardize data
     standardized_data <- scale(numeric_data)
     
-    # Check the dimensions of the standardized data
-    data_dims <- dim(standardized_data)
-
-    # Check if data has enough rows and columns for PCA/t-SNE
-    if (data_dims[1] < 2 | data_dims[2] < 2) {
-      # Show a warning if not enough data
-      showNotification("Not enough data to perform PCA or t-SNE. Please ensure there are at least 2 rows and 2 numeric columns.", type = "warning")
-      return(NULL)  # Prevent further execution if not enough data
-    }
-    
     # K-means clustering
     set.seed(123)  # For reproducibility
     kmeans_result <- kmeans(standardized_data, centers = 3)  # Choose appropriate k
     
     # Add cluster information
     numeric_data$cluster <- as.factor(kmeans_result$cluster)
-    
-    # Step 5: Visualize Clustering Results
-    # PCA for visualization
-    pca_result <- prcomp(standardized_data, center = TRUE, scale. = TRUE)
-    pca_data <- as.data.frame(pca_result$x) %>%
-      cbind(cluster = numeric_data$cluster)
 
-    # Check if PCA has valid results
-    if (is.null(pca_result$x) || ncol(pca_result$x) < 2) {
-      showNotification("PCA could not be performed due to insufficient variance in the data.", type = "warning")
-      return(NULL)  # Prevent further execution if PCA failed
-    }
+    # PCA for visualization with error handling
+    pca_result <-prcomp(standardized_data, center = TRUE, scale. = TRUE)
     
+    # Convert PCA results to data frame and check for valid results
+    pca_data <-as.data.frame(pca_result$x) %>%
+        cbind(cluster = numeric_data$cluster)
+
     # Plot
     ggplot(pca_data, aes(x = PC1, y = PC2, color = cluster)) +
       geom_point() +
       geom_text(aes(label = rownames(pca_data), vjust = -0.5, size = 3)) +
-      ggtitle("PCA of Genes") +
+      ggtitle("PCA of Genes with Similar Phenotype Score") +
       theme_minimal()
+    
+  }, error = function(e){
+    output$errorMessage_clustering <- renderText({
+      print("Error: The data is not suitable or sufficient for PCA")
+    })
+    return(NULL)
+  })
   
   })
   
   # t-SNE plot output
   output$tsne_plot <- renderPlot({
-    data <- filtered_data_pca()
+  tryCatch({
+      data <- filtered_data_pca()
+      
+      # Prepare data for t-SNE dynamically based on selection type
+      pivot_column <- if (input$selection_type_clustering == "group") "Phenotype_Group" else "Phenotype"
+      
+      # Prepare data for t-SNE
+      data <- data %>%
+        mutate(transformed_pvalue = -log10(Aggregated_PValue)) %>%
+        pivot_wider(names_from = all_of(pivot_column), values_from = transformed_pvalue) %>%
+        {
+          if (input$selection_type_clustering == "group") {
+            mutate(., Gene = paste0(Gene, "_", row_number())) # Add unique row number for group selection
+          } else {
+            . # Return the dataset unchanged
+          }
+        } %>%
+        column_to_rownames("Gene") # Name the rownames with Gene
+      
+      # Extract numeric columns for t-SNE
+      numeric_data <- data %>%
+        select(where(is.numeric))
+      
+      # Impute missing values with column means and remove zero-variance columns
+      numeric_data <- numeric_data %>%
+        mutate(across(
+          everything(),
+          ~ ifelse(is.na(.), mean(., na.rm = TRUE), .)  # Impute missing values
+        )) %>%
+        select(where(~ !any(is.na(.)) && sd(.x, na.rm = TRUE) > 0))  # Remove columns with NA or zero variance
+      
+      # Standardize data
+      standardized_data <- scale(numeric_data)
+      
+      # K-means clustering
+      set.seed(123)  # For reproducibility
+      kmeans_result <- kmeans(standardized_data, centers = 3)  # Choose appropriate k
+      
+      # Add cluster information
+      numeric_data$cluster <- as.factor(kmeans_result$cluster)
+      
+      # Perform t-SNE
+      tsne_result <- Rtsne(standardized_data, dims = 2, perplexity = 2, verbose = FALSE)
+      tsne_data <- as.data.frame(tsne_result$Y)
+      colnames(tsne_data) <- c("Dim1", "Dim2")
+      
+      # Add row names as a column for labeling
+      tsne_data$Gene <- rownames(data)
+      tsne_data$cluster <- numeric_data$cluster
+      
+      # Plot
+      ggplot(tsne_data, aes(x = Dim1, y = Dim2, color = cluster)) +
+        geom_point() +
+        geom_text(aes(label = Gene), vjust = -0.5, size = 4) +
+        ggtitle("t-SNE of Genes with Similar Phenotype Score") +
+        theme_minimal()
+      
+    }, error = function(e){
+      output$errorMessage_clustering <- renderText({
+        print("Error: The data is not suitable or sufficient for t-SNE")
+      })
+      return(NULL)
+    })
     
-    # Prepare data for PCA
-    data <- data %>%
-      mutate(transformed_pvalue = -log10(Aggregated_PValue)) %>%
-      pivot_wider(names_from = Phenotype, values_from = transformed_pvalue) %>%
-      column_to_rownames("Gene") # Name the rownames with Gene
-    
-    # Extract numeric columns for PCA
-    numeric_data <- data %>%
-      select(where(is.numeric))
-    
-    # Impute missing values with column means and remove zero-variance columns
-    
-    numeric_data <- numeric_data %>%
-      mutate(across(
-        everything(),
-        ~ ifelse(is.na(.), mean(., na.rm = TRUE), .)  # Impute missing values
-      )) %>%
-      select(where(~ sd(.x, na.rm = TRUE) > 0))  # Remove zero-variance columns
-    
-    # Standardize data
-    standardized_data <- scale(numeric_data)
-    
-    # K-means clustering
-    set.seed(123)  # For reproducibility
-    kmeans_result <- kmeans(standardized_data, centers = 3)  # Choose appropriate k
-    
-    # Add cluster information
-    numeric_data$cluster <- as.factor(kmeans_result$cluster)
-    
-    # Perform t-SNE
-    tsne_result <- Rtsne(standardized_data, dims = 2, perplexity = 2, verbose = FALSE)
-    tsne_data <- as.data.frame(tsne_result$Y)
-    colnames(tsne_data) <- c("Dim1", "Dim2")
-    
-    # Add row names as a column for labeling
-    tsne_data$Gene <- rownames(data)
-    tsne_data$cluster <- numeric_data$cluster
-    
-    # Plot
-    ggplot(tsne_data, aes(x = Dim1, y = Dim2, color = cluster)) +
-      geom_point() +
-      geom_text(aes(label = Gene), vjust = -0.5, size = 4) +
-      ggtitle("t-SNE of Genes") +
-      theme_minimal()
-  }
-    )
-
+    })
 }
+   
 
 # Run the application
 shinyApp(ui = ui, server = server)
