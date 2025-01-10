@@ -1,0 +1,133 @@
+---
+title: "Filtering N/A Values and Duplicates"
+author: "Anjali Rai"
+date: "2024-12-21"
+output: html_document
+---
+
+Install packages if required
+```{r}
+# Uncomment if required
+# install.packages("dplyr")
+# install.packages("VIM")
+```
+
+Load libraries
+```{r}
+library(dplyr)
+library(VIM)
+```
+
+Set working directory
+```{r}
+setwd("")
+```
+
+Load merged data
+```{r}
+merged_data <- read.csv("Merged_df_final.csv")
+```
+
+Remove first column (numbering column not necessary)
+```{r}
+merged_data <- merged_data[, -1]
+```
+
+# Count all N/A values per column
+```{r}
+na_count_per_column <- sapply(merged_data, function(x) sum(is.na(x)))
+na_count_per_column_df <- data.frame(Column = names(na_count_per_column), NA_Count = na_count_per_column)
+
+# Print the result
+print(na_count_per_column_df)
+```
+
+# Visualise Missing Data
+```{r}
+summary(aggr(merged_data, sortVars = TRUE, prop = TRUE, combined = TRUE, 
+             cex.axis = 0.7, numbers = TRUE, gap = 3, 
+             main = "Missing Data Overview"))
+```
+
+# Remove rows with missing values (N/A)
+```{r}
+# Filter the merged_data dataframe to include only rows where complete.cases(merged_data) is TRUE (no missing values).
+merged_data_clean <- merged_data[complete.cases(merged_data), ] # Only keeping rows without any NA values.
+
+# Print out how many rows were removed
+cat("Rows before cleaning: ", nrow(merged_data), "\n")
+cat("Rows after removing NAs: ", nrow(merged_data_clean), "\n")
+```
+
+Check if missing data was random or related to specific genes, mouse strain or phenotypes.
+```{r}
+# Analyse missing data
+missing_data <- merged_data[!complete.cases(merged_data), ] # Rows with missing values
+
+# Count missing rows by gene symbol
+missing_by_gene <- missing_data %>%
+  group_by(gene_symbol) %>%
+  summarise(missing_count = n()) %>%
+  arrange(desc(missing_count))
+print(missing_by_gene)
+
+# Count missing rows by mouse strain
+missing_by_strain <- missing_data %>%
+  group_by(mouse_strain) %>%
+  summarise(missing_count = n()) %>%
+  arrange(desc(missing_count))
+print(missing_by_strain)
+
+# Count missing rows by parameter name
+missing_by_parameter <- missing_data %>%
+  group_by(parameter_name) %>%
+  summarise(missing_count = n()) %>%
+  arrange(desc(missing_count))
+print(missing_by_parameter)
+```
+
+```{r}
+# Check number of unique gene symbols and parameter names
+unique_gene_symbols <- unique(merged_data_clean$gene_symbol)
+cat("Number of unique gene symbols: ", length(unique_gene_symbols), "\n")
+print(head(unique_gene_symbols, 10))
+
+unique_parameter_names <- unique(merged_data_clean$parameter_name)
+cat("Number of unique parameter names: ", length(unique_parameter_names), "\n")
+print(head(unique_parameter_names, 10))
+```
+
+# Normalise gene symbols to uppercase
+```{r}
+merged_data_clean <- merged_data_clean %>%
+  mutate(gene_symbol = toupper(gene_symbol))  # Convert gene_symbol to uppercase
+```
+
+# Normalise parameter names to lowercase
+```{r}
+merged_data_clean <- merged_data_clean %>%
+  mutate(parameter_name = tolower(parameter_name))
+```
+
+# Check for duplicates
+```{r}
+# Create a new data frame containing the rows that are duplicates (excluding the first occurrence of each duplicate).
+duplicated_rows <- merged_data_clean[duplicated(merged_data_clean), ]
+# Print out how many duplicate rows there are
+cat("Number of duplicate rows based on all columns: ", nrow(duplicated_rows), "\n")
+```
+
+# Remove duplicate rows if any
+```{r}
+# Remove all duplicate rows (after the first occurrence) from the merged_data_clean data frame, leaving only unique rows or the first instance of duplicates.
+merged_data_clean <- merged_data_clean[!duplicated(merged_data_clean), ]
+
+# Print out how many rows were removed
+cat("Rows after removing duplicates: ", nrow(merged_data_clean), "\n")
+```
+
+# Save the cleaned data to a new CSV file
+```{r}
+write.csv(merged_data_clean, "merged_data_clean.csv", row.names = FALSE)
+```
+

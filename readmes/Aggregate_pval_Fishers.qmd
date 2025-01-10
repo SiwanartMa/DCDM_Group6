@@ -1,0 +1,222 @@
+---
+title: "Aggregate_pval_Fishers"
+author: "Anjali Rai & Payel Sardar"
+format: html
+editor: visual
+---
+
+### Importing necessary libraries
+
+```{r}
+library(stringr)
+library(tidyr)
+library(dplyr)
+```
+
+## Setting the working directory
+
+```{r}
+setwd("/users/k24034333/DCDM_Group6/")
+```
+
+### Reading the Collated Samples File containing the statistical scores (p-value)
+
+```{r}
+samples_df <- read.csv("/scratch_tmp/grp/msc_appbio/DCDM_group6/outputs/tables/passQC.csv", header = TRUE)
+head(samples_df)
+```
+
+Checking the dimension of the original data
+
+```{r}
+#Dropping last two columns corresponding to QC check
+samples_df <- samples_df[,-((ncol(samples_df) - 1):ncol(samples_df))]
+dim(samples_df)
+```
+
+Reading the Grouped parameter file
+
+```{r}
+grouped_param <- read.csv("../outputs/tables/Grouped_IMPC_Parameters.csv", 
+                       header = TRUE)
+head(grouped_param)
+```
+
+```{r}
+param_subset <- grouped_param[, c("parameterId", "parameter_group")]
+
+# Perform the left join
+combined_samples <- merge(samples_df, 
+                param_subset, 
+                by.x = "parameter_id", 
+                by.y = "parameterId", 
+                all.x = TRUE)
+head(combined_samples)
+```
+
+Replacing all NA values for parameter_group to 'Others'
+
+```{r}
+combined_samples$parameter_group[is.na(combined_samples$parameter_group)] <- "Others" 
+
+# Removing duplicate rows, if any
+combined_samples <- unique(combined_samples)
+```
+
+The collaborator requested visualisations that can be filtered using:
+
+1.  Knockout Mouse strain (**mouse_strain)**
+2.  Phenotype (parameter_name)
+3.  Gene (gene_symbol)
+
+### Data Reduction
+
+```{r}
+# Count the number of records for each gene and select genes with count >= 5
+gene_counts <- combined_samples %>%
+  count(gene_symbol) %>%
+  filter(n >= 5)
+
+# Filter the data for these genes
+data_reduced <- combined_samples %>%
+  filter(gene_symbol %in% gene_counts$gene_symbol)
+
+# Implementing similar filtering step for mouse strain
+strain_counts <- data_reduced %>%
+  count(mouse_strain) %>%
+  filter(n >= 5)
+
+data_reduced <- data_reduced %>%
+  filter(mouse_strain %in% strain_counts$mouse_strain)
+
+# Filtering out any phenotype with count < 5
+phenotype_counts <- data_reduced %>%
+  count(parameter_name) %>%
+  filter(n >= 5)
+
+data_reduced <- data_reduced %>%
+  filter(parameter_name %in% phenotype_counts$parameter_name)
+
+```
+
+```{r}
+head(data_reduced)
+```
+
+Checking the dimension of the dataset after filtering
+
+```{r}
+dim(data_reduced)
+```
+
+```{r}
+par(mar = c(5, 5, 4, 2))
+hist(data_reduced$pvalue, breaks = 30, col = "blue", main = "Pre-Aggregation: Distribution of P-Values",
+     xlab = "P-Value", ylab = "Frequency")
+```
+
+Selecting only columns/features needed for the aggregation of p-values
+
+```{r}
+data_reduced_2 <- data_reduced[,c("mouse_strain",
+                                  "parameter_name",
+                                  "gene_symbol",
+                                  "parameter_group",
+                                  "pvalue")]
+head(data_reduced_2)
+```
+
+```{r}
+dim(data_reduced_2)
+```
+
+Function for computing the p-value using Fisher's aggregation method
+
+```{r}
+fisher_combined_pvalue <- function(pvalues) {
+  if (length(pvalues) == 0) return(NA)
+  chisq_stat <- -2 * sum(log(pvalues))
+  df <- 2 * length(pvalues)
+  p_combined <- 1 - pchisq(chisq_stat, df)
+  return(p_combined)
+}
+```
+
+Applying Fisher's function to aggregate p-values using mouse_strain, parameter_name, and gene_symbol.
+
+```{r}
+aggregated_data <- data_reduced_2 %>%
+  group_by(mouse_strain, parameter_group, parameter_name, gene_symbol) %>%
+  summarise(
+    pvalues = list(pvalue),  # Ensure you have a p-value column
+    .groups = 'drop'
+  ) %>%
+  mutate(
+    combined_pvalue = sapply(pvalues, fisher_combined_pvalue)
+  )
+aggregated_data <- aggregated_data %>% select(-pvalues)
+```
+
+```{r}
+head(aggregated_data)
+```
+
+```{r}
+dim(aggregated_data)
+```
+
+```{r}
+par(mar = c(5, 5, 4, 2))
+hist(aggregated_data$combined_pvalue, breaks = 30, col = "skyblue", main = "Post-Aggregation: Distribution of P-Values",
+     xlab = "Fisher's P-Value", ylab = "Frequency")
+```
+
+Aggregating by mouse_strain and phenotype only
+
+```{r}
+aggregated_mouse_phenotype <- data_reduced_2 %>%
+  group_by(mouse_strain, parameter_name) %>%
+  summarise(
+    pvalues = list(pvalue),  # Ensure you have a p-value column
+    .groups = 'drop'
+  ) %>%
+  mutate(
+    combined_pvalue = sapply(pvalues, fisher_combined_pvalue)
+  )
+aggregated_mouse_phenotype <- aggregated_mouse_phenotype %>% select(-pvalues)
+```
+
+```{r}
+par(mar = c(5, 5, 4, 2))
+hist(aggregated_mouse_phenotype$combined_pvalue, breaks = 30, col = "skyblue", main = "Post-Aggregation pvalue distribution: Mouse strain & phenotype",
+     xlab = "Fisher's P-Value", ylab = "Frequency")
+```
+
+Aggregating by gene_symbol and parameter_name (phenotype)
+
+```{r}
+aggregated_gene_phenotype <- data_reduced_2 %>%
+  group_by(gene_symbol, parameter_group) %>%
+  summarise(
+    pvalues = list(pvalue),  # Ensure you have a p-value column
+    .groups = 'drop'
+  ) %>%
+  mutate(
+    combined_pvalue = sapply(pvalues, fisher_combined_pvalue)
+  )
+aggregated_gene_phenotype <- aggregated_gene_phenotype %>% select(-pvalues)
+```
+
+```{r}
+par(mar = c(5, 5, 4, 2))
+hist(aggregated_gene_phenotype$combined_pvalue, breaks = 30, col = "skyblue", main = "Post-Aggregation pvalue distribution: Gene & phenotype_group",
+     xlab = "Fisher's P-Value", ylab = "Frequency")
+```
+
+Saving the aggregated files for preparing visualisations
+
+```{r}
+write.csv(aggregated_data, 
+          "../outputs/tables/aggregated_data.csv", 
+          row.names = FALSE)
+```
