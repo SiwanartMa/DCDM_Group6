@@ -1,0 +1,5 @@
+# the original data file
+originals/
+
+# scripts that are not used in the project
+/readmes/sa_scripts
